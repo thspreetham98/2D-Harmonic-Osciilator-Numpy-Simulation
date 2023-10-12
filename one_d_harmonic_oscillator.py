@@ -11,7 +11,7 @@ class Sim_Params:
                  dt: float,
                  timesteps: int,
                  wf_offset: float,
-                 potential_offset: float) -> None:
+                 V_offset: float) -> None:
         # constants
         self.m = 1
         self.omega = 1
@@ -22,7 +22,7 @@ class Sim_Params:
         self.dt = dt
         self.timesteps = timesteps
         self.wf_offset = wf_offset
-        self.V_offset = potential_offset
+        self.V_offset = V_offset
         
         
 
