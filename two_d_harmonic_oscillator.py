@@ -43,26 +43,28 @@ class Simulator:
         self.__Px, self.__Py = np.meshgrid(self.__px_space, self.__py_space)
 
         self.__V = 0.5 * params.m * params.omega**2 * ((self.__X - params.V_offset[0])**2 + (self.__Y - params.V_offset[1])**2)
-        self.__initialize()
+        self.reset()
         self.__x_half_step_operator = np.exp(0.5 * (-1j * self.__V * params.dt))
         self.__p_full_step_operator = np.exp(-1j * (self.__Px**2 + self.__Py**2) * params.dt / (2 * params.m))
 
     
-    def __initialize(self) -> np.ndarray[complex]:
+    def reset(self) -> np.ndarray[complex]:
         self.__current_time = 0
         # initilize wfc
         self.wfc = np.exp(-((self.__X - self.params.wf_offset[0])**2 + (self.__Y - self.params.wf_offset[1])**2) / 2, dtype=complex)
+        self.wfc_snapshots = [self.wfc.copy(), ]
 
 
-    def __probability_density(self):
-        return np.abs(self.wfc)**2
+    @staticmethod
+    def __probability_density(wfc):
+        return np.abs(wfc)**2
     
     def plot_current_state(self):
         fig: Figure
         ax: Axes
         ax2: Axes
         fig, ax = plt.subplots()
-        density = self.__probability_density()
+        density = Simulator.__probability_density(self.wfc)
         pcm = ax.pcolormesh(self.__X, self.__Y, density.real, shading='auto', cmap='viridis')
         cbar = fig.colorbar(pcm, ax=ax, label='Density')
         cbar.ax.set_ylabel('Density')
@@ -73,11 +75,14 @@ class Simulator:
 
 
     def split_evolve(self):
-        self.wfc *= self.__x_half_step_operator
-        self.wfc = np.fft.fft2(self.wfc)
-        self.wfc *= self.__p_full_step_operator
-        self.wfc = np.fft.ifft2(self.wfc)
-        self.wfc *= self.__x_half_step_operator
+        temp_wfc = self.wfc.copy()
+        temp_wfc *= self.__x_half_step_operator
+        temp_wfc = np.fft.fft2(temp_wfc)
+        temp_wfc *= self.__p_full_step_operator
+        temp_wfc = np.fft.ifft2(temp_wfc)
+        temp_wfc *= self.__x_half_step_operator
+        self.wfc = temp_wfc
+        self.wfc_snapshots.append(self.wfc)
         self.__current_time += self.params.dt
 
 
@@ -88,7 +93,7 @@ class Simulator:
             if i == 0:
                 return
             self.split_evolve()
-            density = self.__probability_density()
+            density = Simulator.__probability_density(self.wfc)
             pcm = ax.get_children()[0]
             pcm.set_array(density.real.ravel())
             ax.set_title(f'Time: {self.__current_time:.2f}')
@@ -99,3 +104,35 @@ class Simulator:
         ax.set_ylabel('Y')
         plt.close()  # Close the initial plot since it's not needed
         return ani
+    
+    def get_eigenstates_from_snapshots(self, n):
+        E_n = self.E_n(n)
+        t = 0
+        exponents = [0, ]
+        for timestep in range(self.params.timesteps):
+            exponent = +1j * E_n * t
+            exponents.append(exponent)
+            t += self.params.dt
+        coeffs = np.exp(exponents)
+        integral_sum = np.zeros(self.wfc.shape).astype('complex')
+        for coeff, snapshot in zip(coeffs, self.wfc_snapshots):
+            integral_sum += coeff*snapshot
+
+
+        fig: Figure
+        ax: Axes
+        ax2: Axes
+        fig, ax = plt.subplots()
+        density = self.__probability_density(integral_sum)
+        pcm = ax.pcolormesh(self.__X, self.__Y, density.real, shading='auto', cmap='viridis')
+        cbar = fig.colorbar(pcm, ax=ax, label='Density')
+        cbar.ax.set_ylabel('Density')
+        ax2 = ax.twinx()
+        ax2.contour(self.__X, self.__Y, self.__V, colors='r', levels=10)
+        ax.set_title(f'Eigenstate estimate')
+        return (fig, ax, ax2)
+
+        
+
+    def E_n(self, n):
+        return self.params.hbar * self.params.omega * (n + 0.5)
