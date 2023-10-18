@@ -129,7 +129,7 @@ class Simulator:
         cbar.ax.set_ylabel('Density')
         ax2 = ax.twinx()
         ax2.contour(self.__X, self.__Y, self.__V, colors='r', levels=10)
-        ax.set_title(f'Eigenstate estimate')
+        ax.set_title('Eigenstate estimate for n = {}'.format(n))
         return (fig, ax, ax2)
 
         
