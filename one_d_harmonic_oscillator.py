@@ -80,13 +80,7 @@ class Simulator:
         fig, ax, ax2 = self.plot_current_state()
         line1 = ax.get_lines()[0]
         line2 = ax2.get_lines()[0]
-
-        # fig, ax = plt.subplots()
-        # x = self.__x_space
-        # line, = ax.plot(x, np.abs(self.wfc)**2, label='Density')
-        # ax2 = ax.twinx()
-        # line2, = ax2.plot(x, opr.V.real, 'r', label='Potential')
-
+        
         def update(i):
             if i == 0:
                 return line1, line2
