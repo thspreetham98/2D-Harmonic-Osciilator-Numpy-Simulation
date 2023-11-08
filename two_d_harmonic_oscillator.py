@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.axes import Axes
 from matplotlib.animation import FuncAnimation
+import tempfile
+import os
 
 class Sim_Params:
     def __init__(self,
@@ -11,7 +13,8 @@ class Sim_Params:
                  dt: float,
                  timesteps: int,
                  wf_offset: float,
-                 V_offset: tuple[float, float]) -> None:
+                 V_offset: tuple[float, float],
+                 snapshots_max_mem_in_GB: float = 4.0) -> None:
         # constants
         self.m = 1
         self.omega = 1
@@ -23,7 +26,8 @@ class Sim_Params:
         self.timesteps = timesteps
         self.wf_offset = wf_offset
         self.V_offset = V_offset
-        
+        assert snapshots_max_mem_in_GB > 0
+        self.snapshots_max_mem_in_GB = snapshots_max_mem_in_GB
         
 
 class Simulator:
@@ -47,12 +51,20 @@ class Simulator:
         self.__x_half_step_operator = np.exp(0.5 * (-1j * self.__V * params.dt))
         self.__p_full_step_operator = np.exp(-1j * (self.__Px**2 + self.__Py**2) * params.dt / (2 * params.m))
 
+
+    def __init_temp_files__(self):
+        memory_threshold_gb = self.params.snapshots_max_mem_in_GB * (1024 ** 3) // 2
+        self.__wfc_snapshots_temp_dir = tempfile.TemporaryDirectory()
+        self.__max_wfc_snapshots_in_mem = memory_threshold_gb // (16 * self.wfc.shape[0] * self.wfc.shape[1])
+        self.__wfc_files_index = 0
+
     
-    def reset(self) -> np.ndarray[complex]:
+    def reset(self):
         self.__current_time = 0
         # initilize wfc
         self.wfc = np.exp(-((self.__X - self.params.wf_offset[0])**2 + (self.__Y - self.params.wf_offset[1])**2) / 2, dtype=complex)
         self.wfc_snapshots = [self.wfc.copy(), ]
+        self.__init_temp_files__()
 
 
     @staticmethod
@@ -83,7 +95,21 @@ class Simulator:
         temp_wfc *= self.__x_half_step_operator
         self.wfc = temp_wfc
         self.wfc_snapshots.append(self.wfc)
+        if len(self.wfc_snapshots) >= self.__max_wfc_snapshots_in_mem:
+            self.write_snapshots_to_file_and_clear_mem()
         self.__current_time += self.params.dt
+
+    def write_snapshots_to_file_and_clear_mem(self):
+        fname = '{}.npz'.format(self.__wfc_files_index)
+        fpath = os.path.join(self.__wfc_snapshots_temp_dir.name, fname)
+        self.__wfc_files_index += 1
+        np.savez(fpath, self.wfc_snapshots)
+        self.wfc_snapshots = []
+
+    
+    def simulate_without_animation(self):
+        for _ in range(self.params.timesteps):
+            self.split_evolve()
 
 
     def simulate(self):
@@ -109,13 +135,26 @@ class Simulator:
         E_n = self.E_n(n)
         t = 0
         exponents = [0, ]
-        for timestep in range(self.params.timesteps):
+        for _ in range(self.params.timesteps):
             exponent = +1j * E_n * t
             exponents.append(exponent)
             t += self.params.dt
         coeffs = np.exp(exponents)
         integral_sum = np.zeros(self.wfc.shape).astype('complex')
-        for coeff, snapshot in zip(coeffs, self.wfc_snapshots):
+
+        coeff_index = 0
+
+        for i in range(self.__wfc_files_index):
+            fname = '{}.npz'.format(i)
+            fpath = os.path.join(self.__wfc_snapshots_temp_dir.name, fname)
+            loaded_data = np.load(fpath)
+            saved_wfc_snapshot = loaded_data["arr_0"]
+            coeff_index_end = coeff_index + len(saved_wfc_snapshot)
+            for coeff, snapshot in zip(coeffs[coeff_index: coeff_index_end], saved_wfc_snapshot):
+                integral_sum += coeff*snapshot    
+            coeff_index = coeff_index_end
+
+        for coeff, snapshot in zip(coeffs[coeff_index:], self.wfc_snapshots):
             integral_sum += coeff*snapshot
 
 
@@ -136,3 +175,4 @@ class Simulator:
 
     def E_n(self, n):
         return self.params.hbar * self.params.omega * (n + 0.5)
+
