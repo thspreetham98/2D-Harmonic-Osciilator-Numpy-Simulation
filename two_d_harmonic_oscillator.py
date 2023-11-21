@@ -11,7 +11,6 @@ class Sim_Params:
                  xmax: float,
                  res: int,
                  dt: float,
-                 timesteps: int,
                  wf_offset: float,
                  V_offset: tuple[float, float],
                  snapshots_max_mem_in_GB: float = 4.0) -> None:
@@ -23,7 +22,7 @@ class Sim_Params:
         self.xmax = xmax
         self.res = res
         self.dt = dt
-        self.timesteps = timesteps
+        # self.timesteps = int(duration / dt)
         self.wf_offset = wf_offset
         self.V_offset = V_offset
         assert snapshots_max_mem_in_GB > 0
@@ -107,12 +106,13 @@ class Simulator:
         self.wfc_snapshots = []
 
     
-    def simulate_without_animation(self):
-        for _ in range(self.params.timesteps):
+    def simulate_without_animation(self, time: float):
+        timesteps = int(time / self.params.dt)
+        for _ in range(timesteps):
             self.split_evolve()
 
 
-    def simulate(self):
+    def simulate(self, time: float):
         fig, ax, ax2 = self.plot_current_state()
 
         def update(i):
@@ -124,7 +124,8 @@ class Simulator:
             pcm.set_array(density.real.ravel())
             ax.set_title(f'Time: {self.__current_time:.2f}')
 
-        ani = FuncAnimation(fig, update, frames=self.params.timesteps + 1)
+        timesteps = int(time / self.params.dt)
+        ani = FuncAnimation(fig, update, frames=timesteps + 1)
 
         ax.set_xlabel('X')
         ax.set_ylabel('Y')
@@ -135,7 +136,8 @@ class Simulator:
         E_n = self.E_n(n)
         t = 0
         exponents = [0, ]
-        for _ in range(self.params.timesteps):
+        timesteps = int(self.__current_time / self.params.dt)
+        for _ in range(timesteps):
             exponent = +1j * E_n * t
             exponents.append(exponent)
             t += self.params.dt
